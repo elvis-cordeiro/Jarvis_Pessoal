@@ -13,52 +13,104 @@ class SaveImportantMemoryUseCase {
     required this.personalityService,
   });
 
-  /// Fluxo principal: Analisa a conversa e decide se deve salvar
   Future<void> call({
     required String userMessage,
     required String jarvisResponse,
-    bool askUserConfirmation = true,   // Se deve perguntar antes de salvar
   }) async {
-    
-    // 1. Verifica se o assunto é importante
+    final lower = userMessage.toLowerCase();
+    final isExplicit = _isExplicitSaveRequest(lower);
     final isImportant = importanceDetector.isImportant(
-      userMessage, 
+      userMessage,
       jarvisResponse: jarvisResponse,
     );
 
-    if (!isImportant) {
-      return; // Não faz nada se não for importante
-    }
+    if (!isExplicit && !isImportant) return;
 
-    // 2. Se não precisar pedir confirmação, salva direto
-    if (!askUserConfirmation) {
-      await memoryRepository.saveLongTermMemory(
-        content: userMessage,
-        category: 'rotina', // ou 'personalidade', 'preferencias', etc.
-      );
-      return;
-    }
+    final level = _detectMemoryLevel(lower);
+    final category = _detectCategory(lower);
 
-    // 3. Aqui vamos disparar a pergunta para o usuário (via UI ou voz)
-    // Por enquanto vamos imprimir no console (depois conectamos com a interface)
-    print('🧠 Jarvis detectou assunto importante.');
-    print('🤖 Jarvis: Senhor, eu vejo que esse assunto é de relativa importância.');
-    print('Deseja que eu salve isso na minha memória de longo prazo (10 anos)?');
-    
-    // TODO: No futuro, vamos aguardar resposta do usuário ("Sim" ou "Não")
-    // e então salvar ou não.
+    switch (level) {
+      case MemoryLevel.permanent:
+        await memoryRepository.savePermanentMemory(
+          content: userMessage,
+          category: category,
+        );
+        break;
+      case MemoryLevel.longTerm:
+        await memoryRepository.saveLongTermMemory(
+          content: userMessage,
+          category: category,
+        );
+        break;
+      case MemoryLevel.temporary:
+        await memoryRepository.saveTemporaryMemory(
+          content: userMessage,
+        );
+        break;
+    }
   }
 
-  /// Método para salvar diretamente (usado quando o usuário disser "Sim")
-  Future<void> saveConfirmed({
-    required String content,
-    String category = 'general',
-  }) async {
-    await memoryRepository.saveLongTermMemory(
-      content: content,
-      category: category,
-    );
-    
-    print('✅ Memorizado com sucesso na memória permanente!');
+  // Detecta qual nível de memória usar
+  MemoryLevel _detectMemoryLevel(String lower) {
+    // Nível 1 — Permanente: sobre personalidade, preferências, quem é Elvis
+    if (lower.contains('personalidade') ||
+        lower.contains('preferência') ||
+        lower.contains('prefiro') ||
+        lower.contains('sempre') ||
+        lower.contains('odeio') ||
+        lower.contains('amo') ||
+        lower.contains('nunca') ||
+        lower.contains('programado') ||
+        lower.contains('você é') ||
+        lower.contains('minha rotina')) {
+      return MemoryLevel.permanent;
+    }
+
+    // Nível 3 — Temporária: rotina do dia, tarefas passageiras
+    if (lower.contains('hoje') ||
+        lower.contains('amanhã') ||
+        lower.contains('essa semana') ||
+        lower.contains('esse mês') ||
+        lower.contains('temporari')) {
+      return MemoryLevel.temporary;
+    }
+
+    // Nível 2 — Longo prazo: tudo mais importante
+    return MemoryLevel.longTerm;
+  }
+
+  bool _isExplicitSaveRequest(String lower) {
+    return lower.contains('salva') ||
+        lower.contains('guarda') ||
+        lower.contains('memoriza') ||
+        lower.contains('anota') ||
+        lower.contains('não esqueça') ||
+        lower.contains('lembre') ||
+        lower.contains('memória');
+  }
+
+  String _detectCategory(String lower) {
+    if (lower.contains('rotina') ||
+        lower.contains('acord') ||
+        lower.contains('horário') ||
+        lower.contains('hoje')) return 'rotina';
+
+    if (lower.contains('gost') ||
+        lower.contains('prefer') ||
+        lower.contains('favorit') ||
+        lower.contains('prefiro')) return 'preferencias';
+
+    if (lower.contains('personalidade') ||
+        lower.contains('comportamento') ||
+        lower.contains('programado') ||
+        lower.contains('você é')) return 'personalidade';
+
+    if (lower.contains('trabalho') ||
+        lower.contains('projeto') ||
+        lower.contains('tarefa')) return 'trabalho';
+
+    return 'general';
   }
 }
+
+enum MemoryLevel { permanent, longTerm, temporary }
